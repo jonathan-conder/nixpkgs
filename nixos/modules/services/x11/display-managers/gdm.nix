@@ -71,12 +71,24 @@ in
       debug = mkEnableOption "debugging messages in GDM";
 
       # Auto login options specific to GDM
-      autoLogin.delay = mkOption {
-        type = types.int;
-        default = 0;
-        description = ''
-          Seconds of inactivity after which the autologin will be performed.
-        '';
+      autoLogin = {
+        delay = mkOption {
+          type = types.int;
+          default = 0;
+          description = ''
+            Seconds of inactivity after which the autologin will be performed.
+          '';
+        };
+
+        keyname = mkOption {
+          type = types.nullOr types.str;
+          default = null;
+          example = "cryptsetup";
+          description = ''
+            Keyname to set as PAM authtok (to unlock gnome-keyring). See also:
+            {manpage}`pam_systemd_loadkey(8)`.
+          '';
+        };
       };
 
       wayland = mkOption {
@@ -284,7 +296,16 @@ in
     environment.etc."gdm/Xsession".source = config.services.displayManager.sessionData.wrapper;
 
     # GDM LFS PAM modules, adapted somehow to NixOS
-    security.pam.services = {
+    security.pam.services = let
+      # Formats a string for use in `module-arguments`. See `man pam.conf`.
+      formatModuleArgument = token:
+        if lib.hasInfix " " token
+        then "[${lib.replaceStrings ["]"] ["\\]"] token}]"
+        else token;
+
+      keyname = formatModuleArgument "keyname=${cfg.gdm.autoLogin.keyname}";
+      loadkeyArgs = lib.optionalString (cfg.gdm.autoLogin.keyname != null) " ${keyname}";
+    in {
       gdm-launch-environment.text = ''
         auth     required       pam_succeed_if.so audit quiet_success user = gdm
         auth     optional       pam_permit.so
@@ -312,8 +333,8 @@ in
         auth      requisite     pam_nologin.so
         auth      required      pam_succeed_if.so uid >= 1000 quiet
         ${lib.optionalString pamCfg.login.enableGnomeKeyring ''
-          auth       [success=ok default=1]      ${pkgs.gnome.gdm}/lib/security/pam_gdm.so
-          auth       optional                    ${pkgs.gnome-keyring}/lib/security/pam_gnome_keyring.so
+          auth      optional      ${config.systemd.package}/lib/security/pam_systemd_loadkey.so${loadkeyArgs}
+          auth      optional      ${pkgs.gnome-keyring}/lib/security/pam_gnome_keyring.so
         ''}
         auth      required      pam_permit.so
 
@@ -336,7 +357,7 @@ in
         auth       required                    ${pkgs.fprintd}/lib/security/pam_fprintd.so
         auth       required                    pam_env.so
         ${lib.optionalString pamCfg.login.enableGnomeKeyring ''
-          auth       [success=ok default=1]      ${pkgs.gnome.gdm}/lib/security/pam_gdm.so
+          auth       optional                    ${config.systemd.package}/lib/security/pam_systemd_loadkey.so${loadkeyArgs}
           auth       optional                    ${pkgs.gnome-keyring}/lib/security/pam_gnome_keyring.so
         ''}
 
