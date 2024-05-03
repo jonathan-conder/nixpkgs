@@ -466,6 +466,27 @@ let
         '';
       };
 
+      systemdLoadkey = {
+        enable = mkOption {
+          default = false;
+          type = types.bool;
+          description = ''
+            If enabled, pam_systemd_loadkey will take a password from the
+            kernel keyring and set it as the PAM authtok. This is typically used
+            to unlock Gnome keyring / KDE wallet from a LUKS passphrase or PIN.
+          '';
+        };
+
+        keyname = mkOption {
+          default = null;
+          type = types.nullOr types.str;
+          description = ''
+            Name of key to read from the kernel keyring.
+            See {manpage}`pam_systemd_loadkey(8)` for details.
+          '';
+        };
+      };
+
       kwallet = {
         enable = mkOption {
           default = false;
@@ -684,6 +705,9 @@ let
             dp9ik.authserver
           ]; })
           { name = "fprintd"; enable = cfg.fprintAuth; control = "sufficient"; modulePath = "${config.services.fprintd.package}/lib/security/pam_fprintd.so"; }
+          { name = "systemd_loadkey"; enable = cfg.systemdLoadkey.enable; control = "optional"; modulePath = "${config.systemd.package}/lib/security/pam_systemd_loadkey.so"; settings = {
+            inherit (cfg.systemdLoadkey) keyname;
+          }; }
         ] ++
           # Modules in this block require having the password set in PAM_AUTHTOK.
           # pam_unix is marked as 'sufficient' on NixOS which means nothing will run
@@ -693,7 +717,7 @@ let
           # We use try_first_pass the second time to avoid prompting password twice.
           #
           # The same principle applies to systemd-homed
-          (optionals ((cfg.unixAuth || config.services.homed.enable) &&
+          (optionals ((cfg.unixAuth || config.services.homed.enable || cfg.systemdLoadkey.enable) &&
             (config.security.pam.enableEcryptfs
               || config.security.pam.enableFscrypt
               || cfg.pamMount
