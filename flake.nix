@@ -104,5 +104,33 @@
         */
         readOnlyPkgs = ./nixos/modules/misc/nixpkgs/read-only.nix;
       };
+
+      nixosConfigurations.xxx = self.lib.nixosSystem {
+        modules = [({config,...}: {
+          nixpkgs.hostPlatform = "x86_64-linux";
+          security.pam.services.xxx = let
+            cfg = config.security.pam.services.xxx;
+          in {
+            enableGnomeKeyring = true;
+            systemdLoadkey.enable = true;
+            unixAuth = false;
+
+            rules = {
+              account = {
+                unix.control = lib.mkForce "sufficient";
+              };
+              auth = {
+                deny.enable = false;
+                nologin = { enable = true; control = "requisite"; modulePath = "pam_nologin.so"; order = 9000; };
+                succeed_if = { enable = true; control = "required"; modulePath = "pam_succeed_if.so"; args = ["uid" ">=" "1000" "quiet"]; order = cfg.rules.auth.deny.order + 100; };
+                permit = { enable = true; control = "required"; modulePath = "pam_permit.so"; order = cfg.rules.auth.deny.order + 200; };
+              };
+              password = {
+                unix.control = lib.mkForce "requisite";
+              };
+            };
+          };
+        })];
+      };
     };
 }
